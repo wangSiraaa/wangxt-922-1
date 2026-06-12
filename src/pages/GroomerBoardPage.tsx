@@ -2,12 +2,16 @@ import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowRightLeft,
   Ban,
   CheckCircle2,
   Clock,
   Crown,
   LogOut,
+  Plus,
+  ShieldAlert,
   User,
+  UserX,
   XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -21,18 +25,23 @@ import {
 } from '@/components/Toast';
 import { useAppStore } from '@/store/useAppStore';
 import {
+  ADDON_SERVICES,
   PET_SIZE_COLOR,
   PET_SIZE_LABEL,
   QUEUE_STATUS_EMOJI,
   QUEUE_STATUS_LABEL,
   QueueItem,
   QueueStatus,
+  SERVICE_BASE_MINUTES,
   SERVICE_LABEL,
+  ServiceType,
+  SIZE_MULTIPLIER,
   UserRole,
 } from '@/types';
 import {
   addMinutes,
   computeEstimatedStart,
+  computeTotalEstimatedMinutes,
   formatMinutes,
   formatTime,
   getNextStatusLabel,
@@ -65,7 +74,10 @@ export default function GroomerBoardPage() {
     groomers,
     advanceStatus,
     abnormalEndQueue,
+    addAdditionalService,
+    reassignQueue,
     currentRole,
+    recalcQueuePositions,
   } = useAppStore();
   const navigate = useNavigate();
   const [toasts, setToasts] = useState<ToastData[]>([]);
@@ -79,6 +91,20 @@ export default function GroomerBoardPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [abnormalOpen, setAbnormalOpen] = useState(false);
   const [abnormalReason, setAbnormalReason] = useState('');
+
+  const [addonOpen, setAddonOpen] = useState(false);
+  const [addonTargetId, setAddonTargetId] = useState<string | null>(null);
+  const [pendingAddonSvc, setPendingAddonSvc] = useState<ServiceType | null>(null);
+  const [allergyConfirmOpen, setAllergyConfirmOpen] = useState(false);
+
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignTargetId, setReassignTargetId] = useState<string | null>(null);
+  const [reassignToGroomerId, setReassignToGroomerId] = useState('');
+  const [reassignReason, setReassignReason] = useState('');
+
+  useEffect(() => {
+    recalcQueuePositions();
+  }, [recalcQueuePositions]);
 
   useEffect(() => {
     if (currentRole === 'CUSTOMER') {
@@ -133,12 +159,13 @@ export default function GroomerBoardPage() {
       const startedAt = last.statusChangedAt[last.status] || last.createdAt;
       groomerBusyUntil[g.id] = addMinutes(
         startedAt,
-        Math.max(10, Math.round(last.estimatedMinutes * 0.7))
+        Math.max(10, Math.round(computeTotalEstimatedMinutes(last) * 0.7))
       );
     }
   }
 
   const canEdit = currentRole !== 'CUSTOMER';
+  const isManagerOrReception = currentRole === 'RECEPTIONIST';
 
   const doAdvance = (q: QueueItem) => {
     if (!canEdit) return;
@@ -169,7 +196,98 @@ export default function GroomerBoardPage() {
     setSelectedId(null);
   };
 
+  const openAddon = (queueId: string) => {
+    setAddonTargetId(queueId);
+    setAddonOpen(true);
+    setPendingAddonSvc(null);
+  };
+
+  const confirmAddon = (svc: ServiceType) => {
+    if (!addonTargetId) return;
+    const r = addAdditionalService({
+      queueId: addonTargetId,
+      serviceType: svc,
+      addedBy: currentRole,
+    });
+    if (r.needsAllergyConfirm) {
+      setPendingAddonSvc(svc);
+      setAllergyConfirmOpen(true);
+      return;
+    }
+    push({
+      type: r.success ? 'success' : 'error',
+      title: r.success ? '追加服务成功' : '追加服务失败',
+      message: r.message,
+    });
+    if (r.success) {
+      setAddonOpen(false);
+      setAddonTargetId(null);
+    }
+  };
+
+  const confirmAllergyAndAddon = () => {
+    if (!addonTargetId || !pendingAddonSvc) return;
+    const r = addAdditionalService({
+      queueId: addonTargetId,
+      serviceType: pendingAddonSvc,
+      allergyRiskConfirmed: true,
+      addedBy: currentRole,
+    });
+    push({
+      type: r.success ? 'success' : 'error',
+      title: r.success ? '过敏风险已确认，服务追加成功' : '追加服务失败',
+      message: r.message,
+    });
+    if (r.success) {
+      setAddonOpen(false);
+      setAddonTargetId(null);
+      setPendingAddonSvc(null);
+    }
+    setAllergyConfirmOpen(false);
+  };
+
+  const openReassign = (queueId: string) => {
+    const q = queueItems.find((x) => x.id === queueId);
+    setReassignTargetId(queueId);
+    setReassignToGroomerId(
+      groomers.find((g) => g.id !== q?.groomerId && g.isOnDutyToday)?.id || ''
+    );
+    setReassignReason('');
+    setReassignOpen(true);
+  };
+
+  const confirmReassign = () => {
+    if (!reassignTargetId) return;
+    if (!reassignToGroomerId) {
+      push({ type: 'warning', title: '请选择目标美容师' });
+      return;
+    }
+    if (!reassignReason.trim()) {
+      push({ type: 'warning', title: '请填写改派原因' });
+      return;
+    }
+    const r = reassignQueue({
+      queueId: reassignTargetId,
+      toGroomerId: reassignToGroomerId,
+      reason: reassignReason.trim(),
+      reassignedBy: currentRole,
+    });
+    push({
+      type: r.success ? 'success' : 'error',
+      title: r.success ? '工位改派成功' : '工位改派失败',
+      message: r.message,
+    });
+    if (r.success) {
+      setReassignOpen(false);
+      setReassignTargetId(null);
+      setReassignToGroomerId('');
+      setReassignReason('');
+    }
+  };
+
   const ctx = { push };
+  const selectedQueue = selectedId ? queueItems.find((q) => q.id === selectedId) : null;
+  const selectedPet = selectedQueue ? petMap.get(selectedQueue.petId) : null;
 
   return (
     <ToastCtx.Provider value={ctx}>
@@ -190,7 +308,7 @@ export default function GroomerBoardPage() {
               🎯 宠物美容服务看板
             </h2>
             <p className="text-sm text-pet-slateLight mt-1">
-              点击卡片上的「推进」按钮或直接拖拽卡片，将宠物从一列移动到下一列
+              点击卡片选中 → 前台可追加服务 / 工位改派 / 异常结束；点击推进按钮或拖拽卡片流转状态
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -261,11 +379,16 @@ export default function GroomerBoardPage() {
                         q.status !== 'WAITING_ARRIVAL'
                           ? q.statusChangedAt[q.status]
                           : estStart;
+                      const totalMin = computeTotalEstimatedMinutes(q);
                       const estEnd = addMinutes(
                         startedAt || new Date().toISOString(),
-                        q.estimatedMinutes
+                        totalMin
                       );
                       const isSelected = selectedId === q.id;
+                      const hasAddons = (q.additionalServices?.length || 0) > 0;
+                      const hasReassign = (q.reassignmentLog?.length || 0) > 0;
+                      const hasAllergyRisk =
+                        (q.additionalServices || []).some((a) => a.allergyRiskConfirmed);
                       return (
                         <Reorder.Item
                           key={q.id}
@@ -287,8 +410,24 @@ export default function GroomerBoardPage() {
                                 #{q.positionInQueue}
                               </span>
                               <div className="min-w-0">
-                                <p className="font-semibold text-pet-slate truncate">
+                                <p className="font-semibold text-pet-slate truncate flex items-center gap-1.5">
                                   {pet?.name || '未知宠物'}
+                                  {hasAddons && (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-pet-mint/15 text-pet-mintDark text-[10px] font-bold"
+                                      title={`已追加 ${q.additionalServices.length} 项服务`}
+                                    >
+                                      <Plus size={10} />
+                                      {q.additionalServices.length}
+                                    </span>
+                                  )}
+                                  {hasAllergyRisk && (
+                                    <ShieldAlert
+                                      size={12}
+                                      className="text-pet-coral"
+                                      aria-label="含过敏风险加项服务"
+                                    />
+                                  )}
                                 </p>
                                 <p className="text-[11px] text-pet-slateLight truncate">
                                   {pet?.breed || pet?.species || ''}
@@ -310,12 +449,25 @@ export default function GroomerBoardPage() {
                                 <Clock size={12} /> {SERVICE_LABEL[q.serviceType]}
                               </span>
                               <span className="font-mono font-semibold text-pet-orangeDark">
-                                {formatMinutes(q.estimatedMinutes)}
+                                {formatMinutes(totalMin)}
+                                {hasAddons && (
+                                  <span className="text-pet-mintDark ml-1 text-[10px]">
+                                    (+{q.additionalServices.reduce((s, a) => s + a.minutes, 0)}m)
+                                  </span>
+                                )}
                               </span>
                             </div>
                             <div className="flex items-center justify-between text-pet-slateLight">
                               <span className="flex items-center gap-1">
-                                <User size={12} /> {groomer?.name || '待分配'}
+                                <User size={12} />{' '}
+                                {hasReassign ? (
+                                  <span className="flex items-center gap-0.5">
+                                    <ArrowRightLeft size={10} className="text-pet-orange" />
+                                    {groomer?.name || '待分配'}
+                                  </span>
+                                ) : (
+                                  groomer?.name || '待分配'
+                                )}
                               </span>
                               <span className="font-mono">
                                 {q.status === 'WAITING_ARRIVAL'
@@ -323,6 +475,24 @@ export default function GroomerBoardPage() {
                                   : `结束 ${formatTime(estEnd)}`}
                               </span>
                             </div>
+                            {hasAddons && (
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {q.additionalServices.map((a) => (
+                                  <span
+                                    key={a.id}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-0.5 ${
+                                      a.allergyRiskConfirmed
+                                        ? 'bg-pet-coral/15 text-pet-coralDark border border-pet-coral/30'
+                                        : 'bg-pet-mint/15 text-pet-mintDark'
+                                    }`}
+                                    title={`${a.allergyRiskConfirmed ? '⚠️ 已确认过敏风险' : ''} 追加于 ${formatTime(a.addedAt)}`}
+                                  >
+                                    {a.allergyRiskConfirmed && <ShieldAlert size={9} />}
+                                    +{SERVICE_LABEL[a.serviceType]}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
 
                           {canEdit && (
@@ -351,19 +521,42 @@ export default function GroomerBoardPage() {
                             </motion.button>
                           )}
 
-                          {isSelected && currentRole === 'RECEPTIONIST' && (
-                            <motion.button
+                          {isSelected && isManagerOrReception && (
+                            <motion.div
                               initial={{ opacity: 0, height: 0 }}
                               animate={{ opacity: 1, height: 'auto' }}
                               exit={{ opacity: 0, height: 0 }}
-                              className="mt-2 w-full py-2 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 bg-pet-coral/10 text-pet-coralDark border border-pet-coral/30 hover:bg-pet-coral/20 transition-all"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setAbnormalOpen(true);
-                              }}
+                              className="mt-2 flex flex-col gap-1.5"
                             >
-                              <Ban size={12} /> 前台登记异常结束
-                            </motion.button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openAddon(q.id);
+                                }}
+                                className="w-full py-2 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 bg-pet-mint/10 text-pet-mintDark border border-pet-mint/30 hover:bg-pet-mint/20 transition-all"
+                              >
+                                <Plus size={12} /> 追加加项服务
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openReassign(q.id);
+                                }}
+                                disabled={q.status === 'ENDED' || q.status === 'PICKUP'}
+                                className="w-full py-2 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 bg-purple-100/70 text-purple-700 border border-purple-200 hover:bg-purple-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <ArrowRightLeft size={12} /> 工位改派
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAbnormalOpen(true);
+                                }}
+                                className="w-full py-2 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 bg-pet-coral/10 text-pet-coralDark border border-pet-coral/30 hover:bg-pet-coral/20 transition-all"
+                              >
+                                <Ban size={12} /> 前台登记异常结束
+                              </button>
+                            </motion.div>
                           )}
                         </Reorder.Item>
                       );
@@ -381,7 +574,7 @@ export default function GroomerBoardPage() {
           transition={{ delay: 0.5 }}
           className="mt-6 text-center text-xs text-pet-slateLight/70"
         >
-          💡 操作提示：卡片可拖拽移动、点击选中后前台可登记异常结束；顾客视图仅可读。
+          💡 操作提示：卡片可拖拽移动、点击选中后前台可追加服务/工位改派/异常结束；顾客视图仅可读。
         </motion.p>
       </div>
 
@@ -411,6 +604,12 @@ export default function GroomerBoardPage() {
                   <p className="text-sm text-pet-slateLight mt-0.5">
                     此操作将立即结束服务，顾客将无法恢复。请如实填写原因。
                   </p>
+                  {selectedPet && (
+                    <p className="text-xs text-pet-orange mt-2">
+                      目标宠物：{selectedPet.name}（当前状态：
+                      {selectedQueue ? QUEUE_STATUS_LABEL[selectedQueue.status] : '—'}）
+                    </p>
+                  )}
                 </div>
               </div>
               <label className="label-text">异常结束原因 *</label>
@@ -426,6 +625,280 @@ export default function GroomerBoardPage() {
                 </button>
                 <button className="btn-danger flex-1" onClick={confirmAbnormal}>
                   <XCircle size={16} /> 确认结束
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {addonOpen && selectedQueue && selectedPet && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-pet-slate/40 backdrop-blur-sm"
+            onClick={() => setAddonOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+              className="card max-w-lg w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-pet-mint/15 text-pet-mintDark flex items-center justify-center flex-shrink-0">
+                  <Plus size={24} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-display text-2xl text-pet-slate">追加加项服务</h3>
+                  <p className="text-sm text-pet-slateLight mt-0.5">
+                    选择需要追加的服务项，系统将自动重新计算预计完成时间与排队
+                  </p>
+                  <div className="mt-3 p-3 rounded-2xl bg-cream-50 text-xs space-y-1">
+                    <p className="text-pet-slate">
+                      <span className="font-semibold">宠物：</span>
+                      {selectedPet.name} · {PET_SIZE_LABEL[selectedPet.size]} ·{' '}
+                      {SERVICE_LABEL[selectedQueue.serviceType]}
+                    </p>
+                    <p className="text-pet-slate">
+                      <span className="font-semibold">当前总时长：</span>
+                      <span className="font-mono text-pet-orangeDark">
+                        {formatMinutes(computeTotalEstimatedMinutes(selectedQueue))}
+                      </span>
+                    </p>
+                    {selectedPet.allergyNotes?.trim() &&
+                    selectedPet.allergyNotes.trim() !== '无' ? (
+                      <p className="text-pet-coralDark flex items-start gap-1 pt-1">
+                        <ShieldAlert size={12} className="mt-0.5 flex-shrink-0" />
+                        <span>
+                          过敏备注：{selectedPet.allergyNotes}
+                          <br />
+                          <span className="font-semibold">
+                            选择药浴将弹出二次确认对话框，必须标记风险后方可追加。
+                          </span>
+                        </span>
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+                {ADDON_SERVICES.map((svc) => {
+                  const addonMinutes = Math.round(
+                    SERVICE_BASE_MINUTES[svc] * SIZE_MULTIPLIER[selectedPet.size]
+                  );
+                  return (
+                    <button
+                      key={svc}
+                      onClick={() => confirmAddon(svc)}
+                      className="group p-4 rounded-2xl bg-gradient-to-br from-white to-cream-50 border-2 border-cream-200 hover:border-pet-mint/50 hover:shadow-soft text-left transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="font-semibold text-pet-slate flex items-center gap-1.5">
+                          {svc === 'MEDICATED_BATH' && (
+                            <ShieldAlert
+                              size={14}
+                              className={
+                                selectedPet.allergyNotes?.trim() &&
+                                selectedPet.allergyNotes.trim() !== '无'
+                                  ? 'text-pet-coral'
+                                  : 'text-pet-slateLight'
+                              }
+                            />
+                          )}
+                          {SERVICE_LABEL[svc]}
+                        </div>
+                        <Plus size={16} className="text-pet-mintDark opacity-60 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                      <p className="text-xs text-pet-slateLight">
+                        基础时长 {addonMinutes} 分钟（含体型系数 ×{SIZE_MULTIPLIER[selectedPet.size]}）
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end mt-4 pt-4 border-t border-cream-100">
+                <button className="btn-secondary" onClick={() => setAddonOpen(false)}>
+                  <LogOut size={16} /> 关闭
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {allergyConfirmOpen && selectedPet && pendingAddonSvc && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-pet-coral/20 backdrop-blur-sm"
+            onClick={() => setAllergyConfirmOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 10 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+              className="card max-w-md w-full border-2 border-pet-coral/40"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-14 h-14 rounded-2xl bg-pet-coral/20 text-pet-coralDark flex items-center justify-center flex-shrink-0 animate-breathe">
+                  <ShieldAlert size={28} />
+                </div>
+                <div>
+                  <h3 className="font-display text-2xl text-pet-coralDark">
+                    ⚠️ 过敏风险确认
+                  </h3>
+                  <p className="text-sm text-pet-slate mt-1">
+                    该宠物存在过敏备注，药浴服务可能引发过敏反应。请确认已与主人沟通并获得知情同意。
+                  </p>
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-pet-coral/10 border border-pet-coral/20 space-y-2 mb-5 text-sm">
+                <p>
+                  <span className="font-semibold text-pet-slate">宠物：</span>
+                  <span className="text-pet-coralDark">{selectedPet.name}</span>
+                </p>
+                <p>
+                  <span className="font-semibold text-pet-slate">过敏备注：</span>
+                  <span className="text-pet-coralDark">{selectedPet.allergyNotes}</span>
+                </p>
+                <p>
+                  <span className="font-semibold text-pet-slate">拟追加服务：</span>
+                  <span className="text-pet-coralDark">{SERVICE_LABEL[pendingAddonSvc]}</span>
+                </p>
+                <p className="text-xs text-pet-slateLight pt-1">
+                  ☑️ 确认后，该加项将被标记为「过敏风险已确认」，留痕备查。
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="btn-secondary flex-1"
+                  onClick={() => setAllergyConfirmOpen(false)}
+                >
+                  取消
+                </button>
+                <button
+                  className="btn-danger flex-1"
+                  onClick={confirmAllergyAndAddon}
+                >
+                  <ShieldAlert size={14} /> 我已确认，追加服务
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {reassignOpen && selectedQueue && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-pet-slate/40 backdrop-blur-sm"
+            onClick={() => setReassignOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+              className="card max-w-md w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0">
+                  <ArrowRightLeft size={24} />
+                </div>
+                <div>
+                  <h3 className="font-display text-2xl text-pet-slate">工位改派</h3>
+                  <p className="text-sm text-pet-slateLight mt-0.5">
+                    将该订单改派给其他美容师。必须填写改派原因以便后续追溯。
+                  </p>
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-cream-50 mb-4 space-y-1 text-sm">
+                <p>
+                  <span className="font-semibold text-pet-slateLight w-20 inline-block">
+                    宠物：
+                  </span>
+                  {petMap.get(selectedQueue.petId)?.name}（
+                  {petMap.get(selectedQueue.petId) &&
+                    PET_SIZE_LABEL[petMap.get(selectedQueue.petId)!.size]}
+                  ）
+                </p>
+                <p>
+                  <span className="font-semibold text-pet-slateLight w-20 inline-block">
+                    当前美容师：
+                  </span>
+                  {groomerMap.get(selectedQueue.groomerId)?.name}
+                </p>
+                <p>
+                  <span className="font-semibold text-pet-slateLight w-20 inline-block">
+                    当前状态：
+                  </span>
+                  {QUEUE_STATUS_LABEL[selectedQueue.status]}
+                </p>
+                <p>
+                  <span className="font-semibold text-pet-slateLight w-20 inline-block">
+                    已改派：
+                  </span>
+                  {selectedQueue.reassignmentLog.length} 次
+                </p>
+              </div>
+
+              <label className="label-text flex items-center gap-1.5">
+                <UserX size={14} /> 改派到美容师 *
+              </label>
+              <select
+                className="input-base"
+                value={reassignToGroomerId}
+                onChange={(e) => setReassignToGroomerId(e.target.value)}
+              >
+                <option value="">请选择美容师…</option>
+                {groomers
+                  .filter(
+                    (g) => g.id !== selectedQueue.groomerId && g.isOnDutyToday
+                  )
+                  .map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.avatarEmoji} {g.name}（{g.employeeNo}）
+                    </option>
+                  ))}
+              </select>
+
+              <label className="label-text mt-3 flex items-center gap-1.5">
+                <AlertTriangle size={14} /> 改派原因 *
+              </label>
+              <textarea
+                className="input-base min-h-[88px] resize-none"
+                value={reassignReason}
+                onChange={(e) => setReassignReason(e.target.value)}
+                placeholder="如：美容师临时离岗 / 工位冲突 / 按技能专长分配 / 顾客指定等…"
+              />
+              <p className="text-[11px] text-pet-slateLight mt-1.5">
+                ☑️ 该原因将与美容师变更一同写入订单改派日志，永久留痕。
+              </p>
+
+              <div className="flex gap-2 mt-5">
+                <button
+                  className="btn-secondary flex-1"
+                  onClick={() => setReassignOpen(false)}
+                >
+                  <LogOut size={16} /> 取消
+                </button>
+                <button className="btn-primary flex-1" onClick={confirmReassign}>
+                  <CheckCircle2 size={16} /> 确认改派
                 </button>
               </div>
             </motion.div>

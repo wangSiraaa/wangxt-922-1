@@ -21,10 +21,14 @@ import {
 import { useAppStore } from '@/store/useAppStore';
 import type { ValidationResult } from '@/types';
 import {
+  runAddonDurationValidation,
+  runAllergyMedBathValidation,
   runAllValidations,
   runBoardButtonTextValidation,
   runLargeDogDurationValidation,
+  runLargeDogReassignValidation,
   runServiceCancelBlockedValidation,
+  runServiceInProgressCancelValidation,
   runVaccineExpiryValidation,
 } from '@/utils/validations';
 import { uid } from '@/utils/businessRules';
@@ -50,6 +54,10 @@ export default function ValidationPanelPage() {
     seedResult('服务中顾客取消失败 + 状态流转', '🔒'),
     seedResult('大型犬/巨型犬工时系数计算', '📏'),
     seedResult('看板按钮文案与状态流转一致性', '🎯'),
+    seedResult('加项服务延长排队总时长', '➕'),
+    seedResult('大型犬改派占用与日志留痕', '🔄'),
+    seedResult('过敏备注宠物药浴二次确认', '🛡️'),
+    seedResult('服务中顾客取消加强限制', '⛔'),
   ]);
 
   const [globalRunning, setGlobalRunning] = useState(false);
@@ -82,6 +90,10 @@ export default function ValidationPanelPage() {
       runServiceCancelBlockedValidation,
       runLargeDogDurationValidation,
       runBoardButtonTextValidation,
+      runAddonDurationValidation,
+      runLargeDogReassignValidation,
+      runAllergyMedBathValidation,
+      runServiceInProgressCancelValidation,
     ];
     setResults((rs) =>
       rs.map((r, i) => (i === idx ? { ...r, running: true, progress: 0, passed: false } : r))
@@ -115,18 +127,18 @@ export default function ValidationPanelPage() {
 
   const runAll = async () => {
     setGlobalRunning(true);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 8; i++) {
       await runOne(i);
-      if (i < 3) await new Promise((r) => setTimeout(r, 200));
+      if (i < 7) await new Promise((r) => setTimeout(r, 200));
     }
     setGlobalRunning(false);
     setTimeout(() => {
       setResults((rs) => {
         const passed = rs.filter((r) => r.passed).length;
         push({
-          type: passed === 4 ? 'success' : 'warning',
-          title: passed === 4 ? '🎉 全部验证通过！' : `通过 ${passed}/4`,
-          message: '核心业务规则自检完成',
+          type: passed === 8 ? 'success' : 'warning',
+          title: passed === 8 ? '🎉 全部验证通过！' : `通过 ${passed}/8`,
+          message: '核心业务规则自检完成（含加项服务、工位改派、过敏确认、取消限制共8项）',
         });
         return rs;
       });
@@ -141,6 +153,10 @@ export default function ValidationPanelPage() {
         seedResult('服务中顾客取消失败 + 状态流转', '🔒'),
         seedResult('大型犬/巨型犬工时系数计算', '📏'),
         seedResult('看板按钮文案与状态流转一致性', '🎯'),
+        seedResult('加项服务延长排队总时长', '➕'),
+        seedResult('大型犬改派占用与日志留痕', '🔄'),
+        seedResult('过敏备注宠物药浴二次确认', '🛡️'),
+        seedResult('服务中顾客取消加强限制', '⛔'),
       ]);
       push({ type: 'success', title: '已重置', message: '数据已还原到初始示例。' });
     }
@@ -155,6 +171,10 @@ export default function ValidationPanelPage() {
       runCancel: () => runServiceCancelBlockedValidation(),
       runDuration: () => runLargeDogDurationValidation(),
       runBoardText: () => runBoardButtonTextValidation(),
+      runAddonDuration: () => runAddonDurationValidation(),
+      runLargeDogReassign: () => runLargeDogReassignValidation(),
+      runAllergyMedBath: () => runAllergyMedBathValidation(),
+      runSvcInProgressCancel: () => runServiceInProgressCancelValidation(),
       diagnose: () => {
         const res = runAllValidations();
         const summary = {
@@ -175,9 +195,9 @@ export default function ValidationPanelPage() {
     };
     (window as any).__PET_GROOMING_VALIDATE__ = api;
     console.log(
-      '%c🐾 宠物美容排队系统验证接口已就绪',
+      '%c🐾 宠物美容排队系统验证接口已就绪（含加项/改派/过敏/取消共8项）',
       'background:#F4A261;color:#fff;padding:4px 10px;border-radius:6px;font-weight:bold;font-size:13px;',
-      '\n调用方式：\n  window.__PET_GROOMING_VALIDATE__.diagnose()     // 一键诊断并输出JSON（4项全量）\n  window.__PET_GROOMING_VALIDATE__.runVaccine()    // 用例1：疫苗过期校验\n  window.__PET_GROOMING_VALIDATE__.runCancel()      // 用例2：服务中取消校验\n  window.__PET_GROOMING_VALIDATE__.runDuration()    // 用例3：大型犬时长校验\n  window.__PET_GROOMING_VALIDATE__.runBoardText()   // 用例4：看板按钮文案与流转一致性'
+      '\n调用方式：\n  window.__PET_GROOMING_VALIDATE__.diagnose()            // 一键诊断并输出JSON（8项全量）\n  window.__PET_GROOMING_VALIDATE__.runVaccine()           // 用例1：疫苗过期校验\n  window.__PET_GROOMING_VALIDATE__.runCancel()             // 用例2：服务中取消校验\n  window.__PET_GROOMING_VALIDATE__.runDuration()           // 用例3：大型犬时长校验\n  window.__PET_GROOMING_VALIDATE__.runBoardText()          // 用例4：看板按钮文案与流转一致性\n  window.__PET_GROOMING_VALIDATE__.runAddonDuration()      // 用例5：加项延长排队\n  window.__PET_GROOMING_VALIDATE__.runLargeDogReassign()   // 用例6：大型犬改派占用\n  window.__PET_GROOMING_VALIDATE__.runAllergyMedBath()     // 用例7：过敏药浴确认\n  window.__PET_GROOMING_VALIDATE__.runSvcInProgressCancel()// 用例8：服务中取消加强'
     );
     // 自动标记到 document 属性，便于 E2E 框架识别
     document.documentElement.setAttribute('data-pet-grooming-ready', '1');
@@ -203,7 +223,7 @@ export default function ValidationPanelPage() {
             <span className="text-4xl">🧪</span> 自动化验证面板
           </h2>
           <p className="text-sm text-pet-slateLight mt-2">
-            内置四个关键用例：疫苗过期提示、服务中取消失败、大型犬排队时长 × 1.5 系数、看板按钮文案与状态流转一致。支持页面按钮运行，同时暴露{' '}
+            内置 8 个关键用例：疫苗过期提示、服务中取消失败、大型犬时长×1.5、看板按钮流转一致、<b>加项延长排队、大型犬改派占用、过敏药浴二次确认、服务中取消加强限制</b>。支持页面按钮运行，同时暴露{' '}
             <code className="px-2 py-0.5 rounded bg-cream-200 text-pet-orangeDark font-mono text-xs">
               window.__PET_GROOMING_VALIDATE__
             </code>{' '}
@@ -252,7 +272,7 @@ export default function ValidationPanelPage() {
           </div>
 
           <div className="bg-black/30 rounded-2xl p-4 font-mono text-xs sm:text-sm space-y-2 backdrop-blur overflow-x-auto">
-            <div className="text-pet-amberLight">// ✅ 推荐：一键诊断，返回结构化 JSON</div>
+            <div className="text-pet-amberLight">// ✅ 推荐：一键诊断，返回结构化 JSON（8项）</div>
             <div>
               <span className="text-pet-mint">const</span> summary =
               window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">diagnose</span>
@@ -261,9 +281,9 @@ export default function ValidationPanelPage() {
             <div>
               <span className="text-pet-mint">console</span>
               .log(summary.allPassed);{' '}
-              <span className="text-white/50">// true 代表四项全通过</span>
+              <span className="text-white/50">// true 代表八项全通过</span>
             </div>
-            <div className="mt-3 text-pet-amberLight">// 🧪 单条用例独立验证</div>
+            <div className="mt-3 text-pet-amberLight">// 🧪 单条用例独立验证（原有4项）</div>
             <div>
               window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">runVaccine</span>
               ();{' '}
@@ -283,6 +303,27 @@ export default function ValidationPanelPage() {
               window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">runBoardText</span>
               ();{' '}
               <span className="text-white/50">// 用例4：按钮文案与状态流转一致</span>
+            </div>
+            <div className="mt-3 text-pet-mintLight">// ➕ 新需求验收用例（新增4项）</div>
+            <div>
+              window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">runAddonDuration</span>
+              ();{' '}
+              <span className="text-white/50">// 用例5：加项延长排队</span>
+            </div>
+            <div>
+              window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">runLargeDogReassign</span>
+              ();{' '}
+              <span className="text-white/50">// 用例6：大型犬改派占用</span>
+            </div>
+            <div>
+              window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">runAllergyMedBath</span>
+              ();{' '}
+              <span className="text-white/50">// 用例7：过敏药浴二次确认</span>
+            </div>
+            <div>
+              window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">runSvcInProgressCancel</span>
+              ();{' '}
+              <span className="text-white/50">// 用例8：服务中取消加强</span>
             </div>
           </div>
         </motion.div>

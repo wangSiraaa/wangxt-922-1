@@ -1,6 +1,6 @@
 export type PetSize = 'SMALL' | 'MEDIUM' | 'LARGE' | 'GIANT';
 export type QueueStatus = 'WAITING_ARRIVAL' | 'WASHING' | 'DRYING' | 'PICKUP' | 'ENDED';
-export type ServiceType = 'BASIC_WASH' | 'PREMIUM_WASH' | 'SPA' | 'STYLING';
+export type ServiceType = 'BASIC_WASH' | 'PREMIUM_WASH' | 'SPA' | 'STYLING' | 'MEDICATED_BATH' | 'NAIL_TRIM';
 export type UserRole = 'RECEPTIONIST' | 'GROOMER' | 'CUSTOMER';
 export type Gender = 'M' | 'F';
 
@@ -32,6 +32,8 @@ export const SERVICE_LABEL: Record<ServiceType, string> = {
   PREMIUM_WASH: '精洗护理',
   SPA: 'SPA水疗',
   STYLING: '造型修剪',
+  MEDICATED_BATH: '药浴',
+  NAIL_TRIM: '修甲',
 };
 
 export const SERVICE_BASE_MINUTES: Record<ServiceType, number> = {
@@ -39,7 +41,11 @@ export const SERVICE_BASE_MINUTES: Record<ServiceType, number> = {
   PREMIUM_WASH: 90,
   SPA: 120,
   STYLING: 150,
+  MEDICATED_BATH: 45,
+  NAIL_TRIM: 20,
 };
+
+export const ADDON_SERVICES: ServiceType[] = ['MEDICATED_BATH', 'NAIL_TRIM', 'STYLING'];
 
 export const SIZE_MULTIPLIER: Record<PetSize, number> = {
   SMALL: 1.0,
@@ -92,6 +98,31 @@ export interface QueueItem {
   abnormalEndReason: string | null;
   createdAt: string;
   date: string;
+  additionalServices: AdditionalServiceItem[];
+  reassignmentLog: ReassignmentLog[];
+}
+
+export interface AdditionalServiceItem {
+  id: string;
+  serviceType: ServiceType;
+  addedAt: string;
+  addedBy: UserRole;
+  allergyRiskConfirmed: boolean;
+  minutes: number;
+}
+
+export interface ReassignmentLog {
+  id: string;
+  fromGroomerId: string;
+  toGroomerId: string;
+  reason: string;
+  reassignedAt: string;
+  reassignedBy: UserRole;
+}
+
+export interface StoreConfig {
+  closingHour: number;
+  closingMinute: number;
 }
 
 export interface Groomer {

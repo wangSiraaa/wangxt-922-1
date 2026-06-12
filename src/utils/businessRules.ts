@@ -3,8 +3,11 @@ import {
   QueueStatus,
   ServiceType,
   QueueItem,
+  AdditionalServiceItem,
+  StoreConfig,
   SERVICE_BASE_MINUTES,
   SIZE_MULTIPLIER,
+  ADDON_SERVICES,
 } from '@/types';
 
 export function validateVaccine(vaccineExpiry: string | null): { valid: boolean; message: string } {
@@ -157,3 +160,74 @@ export function computeEstimatedStart(
   }
   return baseTime;
 }
+
+export function computeTotalEstimatedMinutes(queue: QueueItem): number {
+  let total = queue.estimatedMinutes;
+  for (const addon of queue.additionalServices) {
+    total += addon.minutes;
+  }
+  return total;
+}
+
+export function needsAllergyConfirmation(
+  serviceType: ServiceType,
+  allergyNotes: string
+): boolean {
+  if (serviceType !== 'MEDICATED_BATH') return false;
+  return !!allergyNotes.trim() && allergyNotes.trim() !== '无';
+}
+
+export function isAfterClosingTime(isoTime: string, config: StoreConfig): boolean {
+  const d = new Date(isoTime);
+  const closeMin = config.closingHour * 60 + config.closingMinute;
+  const timeMin = d.getHours() * 60 + d.getMinutes();
+  return timeMin > closeMin;
+}
+
+export function canAddServiceToQueue(
+  queue: QueueItem,
+  serviceType: ServiceType,
+  petSize: PetSize,
+  allergyNotes: string,
+  config: StoreConfig,
+  allQueues: QueueItem[],
+  groomerBusyUntil: Record<string, string>
+): { allowed: boolean; reason?: string; needsAllergyConfirm: boolean } {
+  if (queue.status === 'ENDED') {
+    return { allowed: false, reason: '已结束的订单不能追加服务', needsAllergyConfirm: false };
+  }
+
+  const allergyConfirm = needsAllergyConfirmation(serviceType, allergyNotes);
+
+  const addonMinutes = calculateDuration(serviceType, petSize);
+  const currentTotal = computeTotalEstimatedMinutes(queue);
+  const newTotal = currentTotal + addonMinutes;
+
+  const estStart = computeEstimatedStart(queue, allQueues, groomerBusyUntil);
+  const estEnd = addMinutes(estStart, newTotal);
+
+  if (isAfterClosingTime(estEnd, config)) {
+    return {
+      allowed: false,
+      reason: `追加「${SERVICE_BASE_MINUTES[serviceType] ? '服务' : '服务'}」后将超出门店打烊时间（${String(config.closingHour).padStart(2, '0')}:${String(config.closingMinute).padStart(2, '0')}），无法加项`,
+      needsAllergyConfirm: allergyConfirm,
+    };
+  }
+
+  return { allowed: true, needsAllergyConfirm: allergyConfirm };
+}
+
+export function canReassignQueue(
+  queue: QueueItem,
+  toGroomerId: string
+): { allowed: boolean; reason?: string } {
+  if (queue.status === 'ENDED') {
+    return { allowed: false, reason: '已结束的订单不能改派' };
+  }
+  if (queue.groomerId === toGroomerId) {
+    return { allowed: false, reason: '不能改派给相同美容师' };
+  }
+  return { allowed: true };
+}
+
+export { ADDON_SERVICES };

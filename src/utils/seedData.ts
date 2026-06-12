@@ -1,5 +1,10 @@
-import { Groomer, Pet, QueueItem, QueueStatus } from '@/types';
+import { Groomer, Pet, QueueItem, QueueStatus, StoreConfig, AdditionalServiceItem, ReassignmentLog } from '@/types';
 import { formatTodayKey, uid } from '@/utils/businessRules';
+
+export const DEFAULT_STORE_CONFIG: StoreConfig = {
+  closingHour: 21,
+  closingMinute: 0,
+};
 
 const today = formatTodayKey();
 const now = new Date().toISOString();
@@ -88,6 +93,22 @@ export const SEED_PETS: Pet[] = [
     ownerPhone: '13800000099',
     createdAt: pastIso(10 * 24 * 60),
   },
+  {
+    id: 'pet_allergy_bath',
+    name: '花花（示例-过敏药浴）',
+    species: '狗',
+    breed: '泰迪',
+    gender: 'F',
+    age: 3,
+    size: 'SMALL',
+    vaccineExpiry: futureIso(120),
+    allergyNotes: '对香精过敏，皮肤敏感',
+    specialNotes: '需要低敏洗护产品',
+    memberId: null,
+    ownerName: '孙女士',
+    ownerPhone: '13800000004',
+    createdAt: pastIso(5 * 24 * 60),
+  },
 ];
 
 const emptyStatusChanged: Record<QueueStatus, string | null> = {
@@ -111,6 +132,8 @@ export const SEED_QUEUES: QueueItem[] = [
     abnormalEndReason: null,
     createdAt: pastIso(10),
     date: today,
+    additionalServices: [] as AdditionalServiceItem[],
+    reassignmentLog: [] as ReassignmentLog[],
   },
   {
     id: uid('q_'),
@@ -128,6 +151,8 @@ export const SEED_QUEUES: QueueItem[] = [
     abnormalEndReason: null,
     createdAt: pastIso(50),
     date: today,
+    additionalServices: [] as AdditionalServiceItem[],
+    reassignmentLog: [] as ReassignmentLog[],
   },
   {
     id: uid('q_'),
@@ -141,10 +166,12 @@ export const SEED_QUEUES: QueueItem[] = [
     abnormalEndReason: null,
     createdAt: pastIso(3),
     date: today,
+    additionalServices: [] as AdditionalServiceItem[],
+    reassignmentLog: [] as ReassignmentLog[],
   },
 ];
 
-export const SCHEMA_VERSION = '1.0.0';
+export const SCHEMA_VERSION = '1.1.0';
 
 export const getInitialStorage = () => {
   void d;
@@ -156,5 +183,6 @@ export const getInitialStorage = () => {
     groomers: SEED_GROOMERS,
     pets: SEED_PETS,
     queueItems: SEED_QUEUES,
+    storeConfig: DEFAULT_STORE_CONFIG,
   };
 };

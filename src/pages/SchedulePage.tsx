@@ -12,6 +12,7 @@ import {
 import {
   addMinutes,
   computeEstimatedStart,
+  computeTotalEstimatedMinutes,
   formatMinutes,
   formatTime,
 } from '@/utils/businessRules';
@@ -28,7 +29,10 @@ export default function SchedulePage() {
     if (active.length > 0) {
       const last = active[active.length - 1];
       const startedAt = last.statusChangedAt[last.status] || last.createdAt;
-      groomerBusyUntil[g.id] = addMinutes(startedAt, Math.max(10, Math.round(last.estimatedMinutes * 0.7)));
+      groomerBusyUntil[g.id] = addMinutes(
+        startedAt,
+        Math.max(10, Math.round(computeTotalEstimatedMinutes(last) * 0.7))
+      );
     }
   }
 
@@ -142,7 +146,9 @@ export default function SchedulePage() {
                     ) : (
                       gQueues.map((q, qi) => {
                         const pet = petMap.get(q.petId);
-                        const widthPct = Math.min(100, Math.max(8, (q.estimatedMinutes / 240) * 100));
+                        const totalMin = computeTotalEstimatedMinutes(q);
+                        const hasAddons = (q.additionalServices?.length || 0) > 0;
+                        const widthPct = Math.min(100, Math.max(8, (totalMin / 240) * 100));
                         const estStart = computeEstimatedStart(q, todayQueues, groomerBusyUntil);
                         const colorClass: Record<string, string> = {
                           SMALL: 'bg-gradient-to-r from-pet-mint to-pet-mintLight',
@@ -165,15 +171,20 @@ export default function SchedulePage() {
                             transition={{ delay: 0.4 + gi * 0.08 + qi * 0.06 }}
                             style={{ width: `${widthPct}%` }}
                             className={`relative rounded-xl text-white text-xs p-2 shadow-soft overflow-hidden flex flex-col justify-between ${colorClass[pet?.size || 'SMALL']} ${qStatusBg[q.status]}`}
-                            title={`${pet?.name || '宠物'} · ${SERVICE_LABEL[q.serviceType]} · ${formatMinutes(q.estimatedMinutes)} · ${QUEUE_STATUS_LABEL[q.status]}`}
+                            title={`${pet?.name || '宠物'} · ${SERVICE_LABEL[q.serviceType]}${hasAddons ? ` (+${q.additionalServices.length}加项)` : ''} · ${formatMinutes(totalMin)} · ${QUEUE_STATUS_LABEL[q.status]}`}
                           >
                             <div className="flex items-center justify-between gap-1 z-10">
                               <span className="font-bold truncate">{pet?.name || '?'}</span>
                               <span className="text-base">{QUEUE_STATUS_EMOJI[q.status]}</span>
                             </div>
                             <div className="flex items-center justify-between gap-1 text-[10px] opacity-90 z-10">
-                              <span className="truncate">{SERVICE_LABEL[q.serviceType]}</span>
-                              <span className="font-mono whitespace-nowrap">{formatMinutes(q.estimatedMinutes)}</span>
+                              <span className="truncate">
+                                {SERVICE_LABEL[q.serviceType]}
+                                {hasAddons && <span className="opacity-80"> +{q.additionalServices.length}</span>}
+                              </span>
+                              <span className="font-mono whitespace-nowrap">
+                                {formatMinutes(totalMin)}
+                              </span>
                             </div>
                             {q.status === 'WAITING_ARRIVAL' && (
                               <div className="absolute bottom-1 left-2 text-[10px] font-mono opacity-95 z-10">
@@ -216,6 +227,8 @@ export default function SchedulePage() {
               {todayQueues.map((q, i) => {
                 const pet = petMap.get(q.petId);
                 const groomer = groomers.find(g => g.id === q.groomerId);
+                const totalMin = computeTotalEstimatedMinutes(q);
+                const addonCnt = q.additionalServices?.length || 0;
                 return (
                   <motion.li
                     key={q.id}
@@ -231,9 +244,15 @@ export default function SchedulePage() {
                       <p className="font-medium text-pet-slate truncate flex items-center gap-2">
                         {pet?.name || '未知宠物'}
                         {pet && <span className={`badge ${PET_SIZE_COLOR[pet.size]} !py-0.5 !px-2`}>{PET_SIZE_LABEL[pet.size]}</span>}
+                        {addonCnt > 0 && (
+                          <span className="badge bg-pet-mint/15 text-pet-mintDark !py-0.5 !px-2">
+                            +{addonCnt}项
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs text-pet-slateLight truncate">
-                        {SERVICE_LABEL[q.serviceType]} · {groomer?.name} · {formatMinutes(q.estimatedMinutes)}
+                        {SERVICE_LABEL[q.serviceType]} · {groomer?.name} · {formatMinutes(totalMin)}
+                        {addonCnt > 0 && q.reassignmentLog?.length > 0 && ` · 改派${q.reassignmentLog.length}次`}
                       </p>
                     </div>
                     <span className="text-xl">{QUEUE_STATUS_EMOJI[q.status]}</span>

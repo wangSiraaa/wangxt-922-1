@@ -27,11 +27,13 @@ import {
   QueueItem,
   QueueStatus,
   SERVICE_LABEL,
+  UserRole,
 } from '@/types';
 import {
   addMinutes,
   canCustomerCancel,
   computeEstimatedStart,
+  computeTotalEstimatedMinutes,
   formatMinutes,
   formatTime,
   uid,
@@ -94,7 +96,7 @@ export default function CustomerViewPage() {
       const startedAt = last.statusChangedAt[last.status] || last.createdAt;
       groomerBusyUntil[g.id] = addMinutes(
         startedAt,
-        Math.max(10, Math.round(last.estimatedMinutes * 0.7))
+        Math.max(10, Math.round(computeTotalEstimatedMinutes(last) * 0.7))
       );
     }
   }
@@ -242,14 +244,19 @@ export default function CustomerViewPage() {
                 q.status !== 'WAITING_ARRIVAL'
                   ? q.statusChangedAt[q.status] || estStart
                   : estStart;
-              const estEnd = addMinutes(startedAt, q.estimatedMinutes);
+              const totalMin = computeTotalEstimatedMinutes(q);
+              const estEnd = addMinutes(startedAt, totalMin);
               const canCancel = canCustomerCancel(q.status);
+              const hasAddons = (q.additionalServices?.length || 0) > 0;
+              const addonTotal = hasAddons
+                ? q.additionalServices.reduce((s, a) => s + a.minutes, 0)
+                : 0;
 
               const globalWaitingQueues = queueItems.filter(
                 (x) =>
                   x.groomerId === q.groomerId &&
                   x.status === 'WAITING_ARRIVAL' &&
-                  x.createdAt < q.createdAt &&
+                  x.positionInQueue < q.positionInQueue &&
                   x.id !== q.id
               ).length;
 
@@ -320,7 +327,12 @@ export default function CustomerViewPage() {
                           </div>
                           <div className="text-pet-slateLight/80">服务时长</div>
                           <div className="font-mono text-pet-slate">
-                            {formatMinutes(q.estimatedMinutes)}
+                            {formatMinutes(totalMin)}
+                            {hasAddons && (
+                              <span className="text-pet-mintDark ml-1 text-[10px]">
+                                (+{addonTotal}m 加项)
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -373,6 +385,32 @@ export default function CustomerViewPage() {
                         : '✅ 本次服务已顺利结束，期待下次见面！'}
                     </p>
                   </div>
+
+                  {hasAddons && (
+                    <div className="px-6 pt-4 pb-0 flex flex-wrap gap-1.5">
+                      <span className="text-[11px] text-pet-slateLight/80 mr-1 self-center">
+                        追加服务：
+                      </span>
+                      {q.additionalServices.map((a) => (
+                        <span
+                          key={a.id}
+                          className={`px-2 py-1 rounded-xl text-[11px] inline-flex items-center gap-1 ${
+                            a.allergyRiskConfirmed
+                              ? 'bg-pet-coral/10 text-pet-coralDark border border-pet-coral/30'
+                              : 'bg-pet-mint/10 text-pet-mintDark'
+                          }`}
+                          title={
+                            a.allergyRiskConfirmed
+                              ? '⚠️ 已确认过敏风险'
+                              : `追加于 ${formatTime(a.addedAt)}`
+                          }
+                        >
+                          {a.allergyRiskConfirmed && <ShieldX size={10} />}
+                          +{SERVICE_LABEL[a.serviceType]} · {a.minutes}min
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="px-6 pb-5 flex flex-wrap gap-3 items-center justify-between border-t border-cream-200/50 pt-4">
                     {pet?.allergyNotes && (
