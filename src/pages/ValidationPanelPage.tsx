@@ -22,6 +22,7 @@ import { useAppStore } from '@/store/useAppStore';
 import type { ValidationResult } from '@/types';
 import {
   runAllValidations,
+  runBoardButtonTextValidation,
   runLargeDogDurationValidation,
   runServiceCancelBlockedValidation,
   runVaccineExpiryValidation,
@@ -48,6 +49,7 @@ export default function ValidationPanelPage() {
     seedResult('疫苗过期/缺失阻断预约', '🧪'),
     seedResult('服务中顾客取消失败 + 状态流转', '🔒'),
     seedResult('大型犬/巨型犬工时系数计算', '📏'),
+    seedResult('看板按钮文案与状态流转一致性', '🎯'),
   ]);
 
   const [globalRunning, setGlobalRunning] = useState(false);
@@ -79,6 +81,7 @@ export default function ValidationPanelPage() {
       runVaccineExpiryValidation,
       runServiceCancelBlockedValidation,
       runLargeDogDurationValidation,
+      runBoardButtonTextValidation,
     ];
     setResults((rs) =>
       rs.map((r, i) => (i === idx ? { ...r, running: true, progress: 0, passed: false } : r))
@@ -112,17 +115,20 @@ export default function ValidationPanelPage() {
 
   const runAll = async () => {
     setGlobalRunning(true);
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       await runOne(i);
-      if (i < 2) await new Promise((r) => setTimeout(r, 200));
+      if (i < 3) await new Promise((r) => setTimeout(r, 200));
     }
     setGlobalRunning(false);
-    const passed = results.filter((r) => r.passed).length;
     setTimeout(() => {
-      push({
-        type: passed === 3 ? 'success' : 'warning',
-        title: passed === 3 ? '🎉 全部验证通过！' : `通过 ${passed}/3`,
-        message: '核心业务规则自检完成',
+      setResults((rs) => {
+        const passed = rs.filter((r) => r.passed).length;
+        push({
+          type: passed === 4 ? 'success' : 'warning',
+          title: passed === 4 ? '🎉 全部验证通过！' : `通过 ${passed}/4`,
+          message: '核心业务规则自检完成',
+        });
+        return rs;
       });
     }, 100);
   };
@@ -134,6 +140,7 @@ export default function ValidationPanelPage() {
         seedResult('疫苗过期/缺失阻断预约', '🧪'),
         seedResult('服务中顾客取消失败 + 状态流转', '🔒'),
         seedResult('大型犬/巨型犬工时系数计算', '📏'),
+        seedResult('看板按钮文案与状态流转一致性', '🎯'),
       ]);
       push({ type: 'success', title: '已重置', message: '数据已还原到初始示例。' });
     }
@@ -147,6 +154,7 @@ export default function ValidationPanelPage() {
       runVaccine: () => runVaccineExpiryValidation(),
       runCancel: () => runServiceCancelBlockedValidation(),
       runDuration: () => runLargeDogDurationValidation(),
+      runBoardText: () => runBoardButtonTextValidation(),
       diagnose: () => {
         const res = runAllValidations();
         const summary = {
@@ -169,7 +177,7 @@ export default function ValidationPanelPage() {
     console.log(
       '%c🐾 宠物美容排队系统验证接口已就绪',
       'background:#F4A261;color:#fff;padding:4px 10px;border-radius:6px;font-weight:bold;font-size:13px;',
-      '\n调用方式：\n  window.__PET_GROOMING_VALIDATE__.diagnose()   // 一键诊断并输出JSON\n  window.__PET_GROOMING_VALIDATE__.runVaccine()  // 疫苗过期校验\n  window.__PET_GROOMING_VALIDATE__.runCancel()   // 服务中取消校验\n  window.__PET_GROOMING_VALIDATE__.runDuration() // 大型犬时长校验'
+      '\n调用方式：\n  window.__PET_GROOMING_VALIDATE__.diagnose()     // 一键诊断并输出JSON（4项全量）\n  window.__PET_GROOMING_VALIDATE__.runVaccine()    // 用例1：疫苗过期校验\n  window.__PET_GROOMING_VALIDATE__.runCancel()      // 用例2：服务中取消校验\n  window.__PET_GROOMING_VALIDATE__.runDuration()    // 用例3：大型犬时长校验\n  window.__PET_GROOMING_VALIDATE__.runBoardText()   // 用例4：看板按钮文案与流转一致性'
     );
     // 自动标记到 document 属性，便于 E2E 框架识别
     document.documentElement.setAttribute('data-pet-grooming-ready', '1');
@@ -195,7 +203,7 @@ export default function ValidationPanelPage() {
             <span className="text-4xl">🧪</span> 自动化验证面板
           </h2>
           <p className="text-sm text-pet-slateLight mt-2">
-            内置三个关键用例：疫苗过期提示、服务中取消失败、大型犬排队时长 × 1.5 系数。支持页面按钮运行，同时暴露{' '}
+            内置四个关键用例：疫苗过期提示、服务中取消失败、大型犬排队时长 × 1.5 系数、看板按钮文案与状态流转一致。支持页面按钮运行，同时暴露{' '}
             <code className="px-2 py-0.5 rounded bg-cream-200 text-pet-orangeDark font-mono text-xs">
               window.__PET_GROOMING_VALIDATE__
             </code>{' '}
@@ -253,7 +261,7 @@ export default function ValidationPanelPage() {
             <div>
               <span className="text-pet-mint">console</span>
               .log(summary.allPassed);{' '}
-              <span className="text-white/50">// true 代表三项全通过</span>
+              <span className="text-white/50">// true 代表四项全通过</span>
             </div>
             <div className="mt-3 text-pet-amberLight">// 🧪 单条用例独立验证</div>
             <div>
@@ -270,6 +278,11 @@ export default function ValidationPanelPage() {
               window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">runDuration</span>
               ();{' '}
               <span className="text-white/50">// 用例3：大型犬×1.5 巨型×2</span>
+            </div>
+            <div>
+              window.__PET_GROOMING_VALIDATE__.<span className="text-pet-orangeLight">runBoardText</span>
+              ();{' '}
+              <span className="text-white/50">// 用例4：按钮文案与状态流转一致</span>
             </div>
           </div>
         </motion.div>

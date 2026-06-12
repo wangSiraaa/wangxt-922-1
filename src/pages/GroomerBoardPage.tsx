@@ -36,6 +36,7 @@ import {
   formatMinutes,
   formatTime,
   getNextStatusLabel,
+  nextStatus,
   uid,
 } from '@/utils/businessRules';
 
@@ -141,12 +142,13 @@ export default function GroomerBoardPage() {
 
   const doAdvance = (q: QueueItem) => {
     if (!canEdit) return;
-    const next = getNextStatusLabel(q.status);
+    const btnLabel = getNextStatusLabel(q.status);
+    const target = nextStatus(q.status);
     advanceStatus(q.id);
     push({
       type: 'success',
-      title: `状态已推进`,
-      message: `「${petMap.get(q.petId)?.name}」→ ${next}`,
+      title: `${btnLabel} ✓`,
+      message: `「${petMap.get(q.petId)?.name}」${QUEUE_STATUS_LABEL[q.status]} → ${QUEUE_STATUS_LABEL[target]}（按钮文案一致）`,
     });
   };
 
@@ -323,7 +325,7 @@ export default function GroomerBoardPage() {
                             </div>
                           </div>
 
-                          {q.status !== 'PICKUP' && canEdit && (
+                          {canEdit && (
                             <motion.button
                               whileHover={{ scale: 1.02 }}
                               whileTap={{ scale: 0.97 }}
@@ -331,24 +333,21 @@ export default function GroomerBoardPage() {
                                 e.stopPropagation();
                                 doAdvance(q);
                               }}
-                              className={`w-full py-2 rounded-xl font-semibold text-sm flex items-center justify-center gap-1.5 text-white transition-all ${
-                                COL_BAR[nextStatusCol(q.status)] || COL_BAR[q.status]
-                              } shadow-softer hover:shadow-soft`}
+                              className={`w-full py-2 rounded-xl font-semibold text-sm flex items-center justify-center gap-1.5 text-white transition-all shadow-softer hover:shadow-soft ${
+                                q.status === 'PICKUP'
+                                  ? 'bg-gradient-to-r from-pet-mint to-pet-mintDark'
+                                  : COL_BAR[nextStatusCol(q.status)] || COL_BAR[q.status]
+                              }`}
                             >
-                              {getNextStatusLabel(q.status)} <ArrowRight size={14} />
-                            </motion.button>
-                          )}
-                          {q.status === 'PICKUP' && canEdit && (
-                            <motion.button
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.97 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                doAdvance(q);
-                              }}
-                              className="w-full py-2 rounded-xl font-semibold text-sm flex items-center justify-center gap-1.5 bg-gradient-to-r from-pet-mint to-pet-mintDark text-white shadow-softer hover:shadow-soft"
-                            >
-                              <CheckCircle2 size={14} /> 确认顾客已接走
+                              {q.status === 'PICKUP' ? (
+                                <>
+                                  <CheckCircle2 size={14} /> {getNextStatusLabel(q.status)}
+                                </>
+                              ) : (
+                                <>
+                                  {getNextStatusLabel(q.status)} <ArrowRight size={14} />
+                                </>
+                              )}
                             </motion.button>
                           )}
 

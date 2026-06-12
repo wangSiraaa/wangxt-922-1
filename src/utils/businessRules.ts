@@ -105,7 +105,7 @@ export function getNextStatusLabel(current: QueueStatus): string {
     PICKUP: '确认接走',
     ENDED: '—',
   };
-  return map[next];
+  return map[current];
 }
 
 export function formatMinutes(total: number): string {

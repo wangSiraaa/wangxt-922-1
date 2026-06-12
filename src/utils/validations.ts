@@ -1,5 +1,6 @@
 import {
   QueueItem,
+  QueueStatus,
   ValidationLogEntry,
   ValidationResult,
   ServiceType,
@@ -8,6 +9,7 @@ import {
 import {
   calculateDuration,
   canCustomerCancel,
+  getNextStatusLabel,
   isVaccineExpired,
   nextStatus,
   validateVaccine,
@@ -241,10 +243,107 @@ export function runLargeDogDurationValidation(): ValidationResult {
   };
 }
 
+export function runBoardButtonTextValidation(): ValidationResult {
+  const t0 = performance.now();
+  const logs: ValidationLogEntry[] = [];
+  let passed = true;
+
+  logs.push(log('INFO', '🧪 用例4：看板推进按钮文案与状态流转结果一致性校验'));
+  logs.push(log('INFO', '依次验证 4 个活动状态 → 下一个状态、按钮文案、二者配对是否一致'));
+
+  const expectations: Array<{
+    current: QueueStatus;
+    currentLabel: string;
+    expectedBtnLabel: string;
+    expectedNext: QueueStatus;
+    expectedNextLabel: string;
+  }> = [
+    {
+      current: 'WAITING_ARRIVAL',
+      currentLabel: '待到店',
+      expectedBtnLabel: '开始洗护',
+      expectedNext: 'WASHING',
+      expectedNextLabel: '洗护中',
+    },
+    {
+      current: 'WASHING',
+      currentLabel: '洗护中',
+      expectedBtnLabel: '吹干定型',
+      expectedNext: 'DRYING',
+      expectedNextLabel: '吹干',
+    },
+    {
+      current: 'DRYING',
+      currentLabel: '吹干',
+      expectedBtnLabel: '等待接走',
+      expectedNext: 'PICKUP',
+      expectedNextLabel: '待接走',
+    },
+    {
+      current: 'PICKUP',
+      currentLabel: '待接走',
+      expectedBtnLabel: '确认接走',
+      expectedNext: 'ENDED',
+      expectedNextLabel: '已结束',
+    },
+  ];
+
+  for (const e of expectations) {
+    const actualBtn = getNextStatusLabel(e.current);
+    const actualNext = nextStatus(e.current);
+    const btnMatch = actualBtn === e.expectedBtnLabel;
+    const nextMatch = actualNext === e.expectedNext;
+    const ok = btnMatch && nextMatch;
+    logs.push(
+      log(
+        ok ? 'SUCCESS' : 'ERROR',
+        `[${e.currentLabel}] 按钮="${actualBtn}"${
+          btnMatch ? ' ✅' : ` ❌ 期望"${e.expectedBtnLabel}"`
+        }，流转结果=${actualNext}(${e.expectedNextLabel === (actualNext === e.expectedNext ? e.expectedNextLabel : '❌')})${
+          nextMatch ? ' ✅' : ` ❌ 期望 ${e.expectedNext}`
+        } → ${e.currentLabel} 按钮文案与流转一致：${ok ? 'PASS' : 'FAIL'}`
+      )
+    );
+    if (!ok) passed = false;
+  }
+
+  logs.push(log('INFO', '验证单向状态机：4 步完整推进后结束在 ENDED'));
+  let cur: QueueStatus = 'WAITING_ARRIVAL';
+  const trail: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    trail.push(`${getNextStatusLabel(cur)}→${nextStatus(cur)}`);
+    cur = nextStatus(cur);
+  }
+  if (cur === 'ENDED') {
+    logs.push(log('SUCCESS', `✅ 推进链路：${trail.join(' → ')}，最终=${cur}`));
+  } else {
+    passed = false;
+    logs.push(log('ERROR', `❌ 最终应为 ENDED，实际为 ${cur}`));
+  }
+
+  logs.push(log('INFO', '验证按钮文案唯一性：4 个活动状态文案互不相同'));
+  const labelSet = expectations.map((x) => x.expectedBtnLabel);
+  const uniqueLen = new Set(labelSet).size;
+  if (uniqueLen === expectations.length) {
+    logs.push(log('SUCCESS', `✅ 四组按钮文案唯一：${labelSet.join(' / ')}`));
+  } else {
+    passed = false;
+    logs.push(log('ERROR', `❌ 存在重复按钮文案（去重后 ${uniqueLen}/${expectations.length}）`));
+  }
+
+  return {
+    name: '看板按钮文案与状态流转一致性',
+    passed,
+    logs,
+    durationMs: Math.round(performance.now() - t0),
+  };
+}
+
 export function runAllValidations(): ValidationResult[] {
   return [
     runVaccineExpiryValidation(),
     runServiceCancelBlockedValidation(),
     runLargeDogDurationValidation(),
+    runBoardButtonTextValidation(),
   ];
 }
